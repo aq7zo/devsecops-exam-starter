@@ -100,7 +100,7 @@ jobs:
       # Trivy reads package-lock.json directly and uses a different advisory
       # source than npm, so the two overlap rather than duplicate.
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: fs
           scan-ref: .
@@ -118,7 +118,7 @@ jobs:
 
       - name: Trivy filesystem scan (SARIF for code scanning)
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: fs
           scan-ref: .
@@ -271,7 +271,7 @@ jobs:
       # bundled node_modules. The filesystem scan above cannot see base image
       # layers, so this is a genuinely different attack surface.
       - name: Trivy image scan (blocking)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -282,7 +282,7 @@ jobs:
 
       - name: Trivy image scan (SARIF)
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -299,7 +299,7 @@ jobs:
 
       # Supply-chain provenance: what is actually inside the artefact we ship.
       - name: Generate SBOM (CycloneDX)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: image
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -355,7 +355,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Trivy scans the planted fixture
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: fs
           scan-ref: security-demo
