@@ -36,6 +36,28 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
+# Patch OS packages. The base image is rebuilt on its own cadence, so between
+# rebuilds it ships Alpine packages whose fixes are already published. The
+# image scan found exactly that: libcrypto3/libssl3 3.5.7-r0 with 3.5.8-r0
+# available (CVE-2026-14456).
+#
+# DL3017 warns that `apk upgrade` makes builds less reproducible, which is
+# true. Taking published security patches is worth that here, and the version
+# actually shipped is recorded in the SBOM CI produces on every build.
+# hadolint ignore=DL3017
+RUN apk --no-cache upgrade
+
+# Remove the package manager from the runtime image. This container runs
+# `node server.js` and installs nothing at run time, so npm, npx, corepack and
+# yarn are build-time tools that only sit here adding attack surface.
+#
+# This is not hypothetical: every Node.js CVE in the image scan came from npm's
+# own bundled dependency tree -- tar (CRITICAL), brace-expansion, pacote,
+# sigstore, ip-address, picomatch -- while app/node_modules was entirely clean.
+# Deleting the tool removes the whole class of finding rather than chasing
+# patches for a program the app never calls.
+RUN rm -rf /usr/local/lib/node_modules/npm            /usr/local/lib/node_modules/corepack            /usr/local/bin/npm            /usr/local/bin/npx            /usr/local/bin/corepack            /opt/yarn-v*            /usr/local/bin/yarn            /usr/local/bin/yarnpkg
+
 # --chown at COPY time rather than a later `RUN chown -R`: a recursive chown
 # rewrites every file into a new layer, roughly doubling the image size.
 COPY --chown=node:node --from=deps /app/node_modules ./node_modules

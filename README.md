@@ -182,6 +182,13 @@ a root container.
 
 Other hardening in the same spirit:
 
+- **No package manager in the runtime image.** npm, npx, corepack and yarn are
+  deleted from the final stage. The container runs `node server.js` and
+  installs nothing at run time, so they are build-time tools that only add
+  attack surface — and they were the source of 11 of the image's 13
+  vulnerabilities (see [Challenges](#the-image-scan-that-was-right)).
+- **`apk upgrade` for published OS patches**, because the base image is
+  rebuilt on its own cadence and lags its own distribution's fixes.
 - `COPY --chown` instead of a later `RUN chown -R`, which would rewrite every
   file into a new layer and roughly double the image size.
 - `HEALTHCHECK` using Node's built-in `fetch`, so the image needs neither
@@ -497,6 +504,51 @@ Uniform failure across configurations that should behave differently meant the
 tool was never running — which pointed at setup, not results, before I read a
 single line of log. Symptoms that *should* differ but don't are the useful
 signal.
+
+### The image scan that was right
+
+The last job to go green was the image scan, and unlike everything else in
+this section it was not a mistake of mine — the scanner was correct. It
+reported 13 findings: 2 HIGH in Alpine's `libcrypto3`/`libssl3`, and 11 in
+Node packages including a CRITICAL in `tar`.
+
+The instinct is to argue with the gate. What made the decision easy was
+reading *where* the findings were:
+
+```
+app/node_modules/...                                       0    (every row)
+usr/local/lib/node_modules/npm/node_modules/tar            3    (1 CRITICAL)
+usr/local/lib/node_modules/npm/node_modules/brace-expansion 3
+usr/local/lib/node_modules/npm/node_modules/pacote          2
+usr/local/lib/node_modules/npm/node_modules/sigstore        1
+...
+```
+
+The application's own dependency tree was completely clean. Every Node finding
+was inside **npm's** bundled dependencies — the package manager that ships
+inside `node:22-alpine`.
+
+Which raised the actual question: why is a package manager in a production
+image at all? This container runs `node server.js`. It installs nothing at run
+time. npm is a build-time tool, and the multi-stage build already exists to
+keep build-time things out of the runtime stage — I had simply not noticed that
+the base image was smuggling one in underneath me. Deleting npm, npx, corepack
+and yarn removed all 11 findings at once, and made the image smaller.
+
+The two Alpine findings had a published fix (`3.5.7-r0` → `3.5.8-r0`) that the
+base image had not picked up yet, so `apk upgrade` collects them. Hadolint's
+DL3017 objects to `apk upgrade` on reproducibility grounds, which is a fair
+objection; I suppressed that one rule inline with a comment explaining the
+trade-off, rather than lowering the lint threshold and losing every other check
+it performs.
+
+The lesson is the one I would most want a reviewer to take from this repo.
+**A finding is information about your design, not an obstacle to your
+pipeline.** The fix that made the gate pass was not a suppression or a severity
+downgrade — it was removing software that should never have been in the
+artefact. If I had reached for `--severity CRITICAL` or an ignore file, the
+image would still contain a package manager it has no use for, and the
+pipeline would have taught me nothing.
 
 ### The credential that was too fake to detect
 
