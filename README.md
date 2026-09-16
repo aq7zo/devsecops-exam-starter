@@ -264,8 +264,9 @@ Everything lives in [`security-demo/`](./security-demo/):
 | File | Planted | Detected by |
 |---|---|---|
 | `package.json` / `package-lock.json` | `lodash@4.17.15`, `express@4.16.0`, `minimist@1.2.0` | Trivy, `npm audit` |
-| `leaked-credentials.js` | Fake AWS key, GitHub PAT and RSA private key | Gitleaks |
+| `leaked-credentials.js` | Fake GitHub PAT and RSA private key | Gitleaks |
 
+CI confirms **10 HIGH/CRITICAL dependency findings and 2 detected credentials**.
 The headline finding is **`minimist@1.2.0` — CVE-2021-44906, CRITICAL**
 (prototype pollution), alongside HIGH advisories in `lodash` (code injection
 via `_.template`), `path-to-regexp` (ReDoS), `qs` (prototype pollution) and
@@ -496,6 +497,40 @@ Uniform failure across configurations that should behave differently meant the
 tool was never running — which pointed at setup, not results, before I read a
 single line of log. Symptoms that *should* differ but don't are the useful
 signal.
+
+### The credential that was too fake to detect
+
+The fixture originally planted three credentials. The first CI run reported
+two:
+
+```
+Gitleaks detected 2 planted credential(s)
+  private-key   line 25
+  github-pat    line 22
+```
+
+The missing one was an AWS key pair. Before committing it I had tested
+Gitleaks' `aws-access-token` regex against the string locally and confirmed it
+matched — so I recorded in this README that it would be caught. It was not.
+
+Gitleaks does not only run rules; it also applies an allowlist that suppresses
+known-fake values. The key I used was `AKIAIOSFODNN7EXAMPLE`, Amazon's own
+published documentation example, and it contains the string `EXAMPLE`. I chose
+it precisely *because* it was a safe published placeholder, which turns out to
+be exactly why the scanner ignores it.
+
+I removed it rather than hunting for an AWS key that is realistic enough to
+detect but not realistic enough to trip GitHub's push protection — the same
+trap the Stripe key set earlier. Two confirmed detections demonstrate the gate;
+a third adds nothing.
+
+The real lesson is about what I had verified. **Testing a rule's regex is not
+testing the tool.** The regex was a component of the scanner; the allowlist,
+which I did not model, was the part that decided the outcome. A local check
+against my own mental model of a tool gave me false confidence, and it took
+real CI output to correct it — which is the argument for the inverted gate in
+the first place: assertions against a tool's *actual* output, not against what
+I believe the tool does.
 
 ### Two smaller ones
 

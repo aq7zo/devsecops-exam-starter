@@ -6,7 +6,7 @@ fixture for the pipeline**, not part of the application.
 | File | What is planted | Caught by |
 |---|---|---|
 | `package.json` + `package-lock.json` | `lodash@4.17.15`, `express@4.16.0`, `minimist@1.2.0` — one CRITICAL and several HIGH advisories | Trivy (`fs` scan), `npm audit` |
-| `leaked-credentials.js` | Fake AWS, GitHub PAT and SSH private key | Gitleaks |
+| `leaked-credentials.js` | Fake GitHub PAT and RSA private key | Gitleaks |
 
 ## Why it is isolated instead of planted in the real app
 

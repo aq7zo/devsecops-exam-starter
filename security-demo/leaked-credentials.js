@@ -1,6 +1,10 @@
 /**
  * DELIBERATELY PLANTED FAKE CREDENTIALS -- exam fixture, not a real leak.
  *
+ * Both values below are CONFIRMED detected by the CI run, not merely assumed
+ * to match a rule. An AWS key pair was planted here originally and removed:
+ * see the "credential that was too fake" note in ../README.md.
+ *
  * Required by the exam spec: "deliberately commit a 'fake' API key ...
  * demonstrate how your pipeline successfully detects and flags this".
  *
@@ -14,10 +18,6 @@
  */
 
 module.exports = {
-  // Gitleaks rule: aws-access-token
-  AWS_ACCESS_KEY_ID: 'AKIAIOSFODNN7EXAMPLE',
-  AWS_SECRET_ACCESS_KEY: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-
   // Gitleaks rule: github-pat
   GITHUB_TOKEN: 'ghp_1234567890abcdefghijklmnopqrstuvwxyz',
 
