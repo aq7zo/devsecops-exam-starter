@@ -1,0 +1,21 @@
+# Gitleaks config for the PRODUCTION secret scan.
+#
+# Extends the upstream default ruleset (~170 provider rules) rather than
+# redefining rules, so new upstream detections arrive for free.
+title = "Macky Merch API - production secret scan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+The security-demo/ fixture contains deliberately planted fake credentials. It
+is excluded here so it cannot mask a REAL leak by keeping this gate
+permanently red. It is not unscanned: the `vulnerability-demo` CI job scans it
+with the default ruleset and fails if those fakes are NOT detected.
+"""
+paths = [
+  '''^security-demo/''',
+  '''^docs/''',
+  '''\.md$''',
+]

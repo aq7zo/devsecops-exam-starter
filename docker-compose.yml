@@ -1,0 +1,62 @@
+# Bonus: local stack -- API + a dummy datastore on a private user-defined
+# network. `docker compose up --build` is the one command a reviewer needs.
+#
+# No top-level `version:` key: it has been obsolete since Compose v2 and
+# current releases warn about it.
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime          # skip the test stage for local runs
+    image: macky-merch-api:local
+    init: true                 # tini as PID 1 -> reaps zombies, fast SIGTERM
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"  # bound to loopback, not 0.0.0.0
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Service name resolves over the `backend` network's embedded DNS.
+      # Wired up and reachable; the baseline app does not read it yet, since
+      # the starter repo asks that server.js keep its current behaviour.
+      REDIS_URL: redis://cache:6379
+    depends_on:
+      cache:
+        condition: service_healthy   # wait for readiness, not just creation
+    networks:
+      - backend
+    # Defence in depth: the app never writes to its own filesystem and never
+    # needs new privileges, so take both away.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - cache-data:/data
+    networks:
+      - backend
+    # No `ports:` on purpose -- the datastore is reachable only from inside
+    # the network, never from the host. This is the whole point of putting it
+    # on its own network instead of using the default bridge.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  cache-data:

@@ -1,0 +1,12 @@
+{
+  "name": "security-demo-vulnerable-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DELIBERATELY VULNERABLE. Fixture that proves the CI scanners actually fire. Never installed by the application - see security-demo/README.md.",
+  "license": "ISC",
+  "dependencies": {
+    "lodash": "4.17.15",
+    "express": "4.16.0",
+    "minimist": "1.2.0"
+  }
+}

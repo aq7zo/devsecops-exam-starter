@@ -1,0 +1,46 @@
+name: CodeQL
+
+# Third scanner class, complementing the other two in ci.yml:
+#   Trivy      -> known CVEs in dependencies and image layers (SCA)
+#   Gitleaks   -> credentials committed to the repo
+#   CodeQL     -> flaws in code we wrote ourselves (SAST)
+# Only the third can find, say, a hand-rolled injection sink -- no advisory
+# database will ever list a bug that exists only in this repository.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly re-scan. The code does not change but CodeQL's query packs do, so
+    # a file committed today can become a finding next month without any push.
+    - cron: '27 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze JavaScript
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # publish findings to the Security tab
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # security-extended adds lower-confidence security queries on top of
+          # the default set. Worth the extra noise on a codebase this small.
+          queries: security-extended
+
+      # JavaScript needs no build step; CodeQL extracts straight from source.
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

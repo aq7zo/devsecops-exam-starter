@@ -1,0 +1,32 @@
+# Scanners tell you a dependency is vulnerable; Dependabot is what actually
+# closes the gap. Without it, `dependency-scan` eventually goes red on a
+# dependency nobody has time to bump, and the gate gets disabled instead.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for all dev-dependency bumps instead of five. Review fatigue is
+      # the main reason these updates get ignored.
+      dev-dependencies:
+        dependency-type: development
+
+  # The Dockerfile's base image ages faster than the app: most image CVEs come
+  # from the base layer, not from our code.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Actions are third-party code running with repository credentials. They
+  # need patching like anything else.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Deliberately NOT watching security-demo/: its dependencies are pinned to
+  # vulnerable versions on purpose and must stay that way.

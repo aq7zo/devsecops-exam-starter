@@ -1,0 +1,9 @@
+# Windows checks files out with CRLF line endings; Linux CI runners expect LF.
+# A shell script with CRLF fails on Linux with the famously unhelpful
+# "bad interpreter: /usr/bin/env bash^M". Force LF for everything the CI
+# runner executes, regardless of which OS it was committed from.
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
