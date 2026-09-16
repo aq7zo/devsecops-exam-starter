@@ -23,6 +23,13 @@ concurrency:
 env:
   IMAGE_NAME: macky-merch-api
   TRIVY_SEVERITY: HIGH,CRITICAL
+  # Trivy runs from its official published image rather than the marketplace
+  # action. That action downloads and installs the Trivy binary from GitHub
+  # Releases on every run, which is an extra moving part between us and the
+  # scan -- and it is the part that failed. Pulling a pinned container is the
+  # same approach already used for Gitleaks below: one fewer thing to break,
+  # and the exact scanner version is reproducible.
+  TRIVY_IMAGE: aquasec/trivy:0.65.0
 
 jobs:
   # =========================================================================
@@ -99,34 +106,17 @@ jobs:
 
       # Trivy reads package-lock.json directly and uses a different advisory
       # source than npm, so the two overlap rather than duplicate.
-      - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: fs
-          scan-ref: .
-          # misconfig is reported via SARIF below rather than gated here:
-          # its Dockerfile/IaC policy set changes between Trivy releases, and
-          # a gate whose ruleset moves underneath you turns into a flaky
-          # blocker on unrelated PRs. Vulns and secrets are stable, so those
-          # two block.
-          scanners: vuln,secret
-          severity: ${{ env.TRIVY_SEVERITY }}
-          ignore-unfixed: true     # do not block on what cannot be patched yet
-          skip-dirs: security-demo
-          exit-code: '1'
-          format: table
+      - name: Trivy filesystem scan (blocking)
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" fs             --scanners vuln,secret             --severity "$TRIVY_SEVERITY"             --ignore-unfixed             --skip-dirs security-demo             --exit-code 1             --format table             .
 
+      # misconfig is reported here but not gated: its policy set changes
+      # between Trivy releases, and a gate whose ruleset moves underneath you
+      # becomes a flaky blocker on unrelated PRs.
       - name: Trivy filesystem scan (SARIF for code scanning)
         if: always()
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,secret,misconfig
-          skip-dirs: security-demo
-          exit-code: '0'
-          format: sarif
-          output: trivy-fs.sarif
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" fs             --scanners vuln,secret,misconfig             --skip-dirs security-demo             --exit-code 0             --format sarif             --output trivy-fs.sarif             .
 
       - name: Publish results to the GitHub Security tab
         if: always() && hashFiles('trivy-fs.sarif') != ''
@@ -270,25 +260,22 @@ jobs:
       # Scans the assembled image: OS packages from the Alpine base *and* the
       # bundled node_modules. The filesystem scan above cannot see base image
       # layers, so this is a genuinely different attack surface.
+      #
+      # The image is exported to a tar and scanned with --input rather than
+      # handing Trivy the Docker socket. Mounting the socket into a container
+      # grants it full control of the daemon, which is a lot of authority for
+      # something whose only job is to read a filesystem.
+      - name: Export image for scanning
+        run: docker save "${IMAGE_NAME}:${GITHUB_SHA}" -o image.tar
+
       - name: Trivy image scan (blocking)
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: image
-          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          severity: ${{ env.TRIVY_SEVERITY }}
-          ignore-unfixed: true
-          exit-code: '1'
-          format: table
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" image             --input image.tar             --severity "$TRIVY_SEVERITY"             --ignore-unfixed             --exit-code 1             --format table
 
       - name: Trivy image scan (SARIF)
         if: always()
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: image
-          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          exit-code: '0'
-          format: sarif
-          output: trivy-image.sarif
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" image             --input image.tar             --exit-code 0             --format sarif             --output trivy-image.sarif
 
       - name: Publish image findings to the Security tab
         if: always() && hashFiles('trivy-image.sarif') != ''
@@ -299,12 +286,8 @@ jobs:
 
       # Supply-chain provenance: what is actually inside the artefact we ship.
       - name: Generate SBOM (CycloneDX)
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: image
-          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          format: cyclonedx
-          output: sbom.cdx.json
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" image             --input image.tar             --format cyclonedx             --output sbom.cdx.json
 
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
@@ -355,15 +338,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Trivy scans the planted fixture
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: fs
-          scan-ref: security-demo
-          scanners: vuln
-          severity: HIGH,CRITICAL
-          exit-code: '0'      # assertion happens in the next step
-          format: json
-          output: demo-trivy.json
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" fs             --scanners vuln             --severity HIGH,CRITICAL             --exit-code 0             --format json             --output demo-trivy.json             security-demo
 
       - name: Assert Trivy found something
         run: |

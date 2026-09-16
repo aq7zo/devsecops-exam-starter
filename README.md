@@ -222,10 +222,17 @@ that was committed and then "removed" in a later commit.
 `npm audit` is in the pipeline too, as a second opinion on a different advisory
 source — but it only ever sees `package-lock.json`. Trivy scans the **built
 image**, which is where the Alpine packages live, and emits SARIF that lands in
-the GitHub Security tab instead of scrolling past in a log. It runs as a single
-action with no server component and no account.
+the GitHub Security tab instead of scrolling past in a log. It needs no server
+component and no account.
 
-`ignore-unfixed: true` on the blocking scans is deliberate: blocking a merge on
+Both Trivy and Gitleaks run from **pinned official container images** rather
+than marketplace actions. The `trivy-action` wrapper downloads and installs the
+Trivy binary from GitHub Releases on every run; that install is an extra
+dependency between the pipeline and the scan, and it is what broke on the first
+attempt (see [Challenges](#the-scanner-that-could-not-install)). A pinned image
+removes the installer entirely and makes the scanner version reproducible.
+
+`--ignore-unfixed` on the blocking scans is deliberate: blocking a merge on
 a CVE with no available patch gives the developer no action except to disable
 the gate, which is how security checks die. Unfixed findings still reach the
 Security tab, they just do not stop the queue.
@@ -454,6 +461,41 @@ I did, and burning a push on it. And **the cheapest fix is often to remove the
 thing rather than to outsmart the tool** — I was trying to craft a credential
 that fooled one scanner and not the other, when the requirement never asked
 for that credential in the first place.
+
+### The scanner that could not install
+
+The first pipeline run failed in all three Trivy jobs, and the log showed the
+failure was not in scanning at all:
+
+```
+Run echo "installing Trivy binary"
+aquasecurity/trivy info checking GitHub for tag 'v0.65.0'
+aquasecurity/trivy info found version: 0.65.0 for v0.65.0/Linux/64bit
+Error: Process completed with exit code 1
+```
+
+`trivy-action` does not contain Trivy. It downloads and installs the binary
+from GitHub Releases each run, and that download failed. I had guessed the
+cause was the CVE database being rate-limited — a common CI failure — but the
+log showed it never got as far as the database.
+
+The fix was to notice I had already solved this problem once. Gitleaks was
+running from its pinned upstream container image, precisely so there was no
+installer to break. Trivy was going through a wrapper that adds a runtime
+download for no benefit. Running `aquasec/trivy:0.65.0` directly removed the
+installer, pinned the exact scanner version, and made both scanners consistent.
+
+While rewriting it I also stopped handing Trivy the Docker socket to scan the
+built image, and used `docker save` plus `--input` instead. Mounting the socket
+into a container gives it full control of the Docker daemon, which is far more
+authority than something that only needs to read a filesystem.
+
+The lesson was about diagnosis, not Trivy. **Every** Trivy step failed,
+including the two configured with `exit-code: 0` that cannot fail on findings.
+Uniform failure across configurations that should behave differently meant the
+tool was never running — which pointed at setup, not results, before I read a
+single line of log. Symptoms that *should* differ but don't are the useful
+signal.
 
 ### Two smaller ones
 
