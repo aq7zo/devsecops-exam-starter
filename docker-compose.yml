@@ -1,8 +1,8 @@
-# Bonus: local stack -- API + a dummy datastore on a private user-defined
-# network. `docker compose up --build` is the one command a reviewer needs.
+# Local stack: API + datastore on a private network. Brought up with
+# `docker compose up --build`.
 #
-# No top-level `version:` key: it has been obsolete since Compose v2 and
-# current releases warn about it.
+# No top-level `version:` key -- obsolete since Compose v2, and current
+# releases warn about it.
 
 services:
   api:
@@ -10,24 +10,23 @@ services:
       context: .
       target: runtime          # skip the test stage for local runs
     image: macky-merch-api:local
-    init: true                 # tini as PID 1 -> reaps zombies, fast SIGTERM
+    init: true                 # PID 1 that reaps zombies and forwards SIGTERM
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"  # bound to loopback, not 0.0.0.0
+      - "127.0.0.1:3000:3000"  # loopback only, not 0.0.0.0
     environment:
       NODE_ENV: production
       PORT: 3000
-      # Service name resolves over the `backend` network's embedded DNS.
-      # Wired up and reachable; the baseline app does not read it yet, since
-      # the starter repo asks that server.js keep its current behaviour.
+      # Resolves over the `backend` network's embedded DNS. Reachable but
+      # unused: server.js keeps its baseline behaviour per the starter repo.
       REDIS_URL: redis://cache:6379
     depends_on:
       cache:
-        condition: service_healthy   # wait for readiness, not just creation
+        condition: service_healthy   # readiness, not just container creation
     networks:
       - backend
-    # Defence in depth: the app never writes to its own filesystem and never
-    # needs new privileges, so take both away.
+    # The app never writes to its own filesystem and never needs new
+    # privileges, so both are taken away.
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -42,9 +41,8 @@ services:
       - cache-data:/data
     networks:
       - backend
-    # No `ports:` on purpose -- the datastore is reachable only from inside
-    # the network, never from the host. This is the whole point of putting it
-    # on its own network instead of using the default bridge.
+    # No `ports:` on purpose -- reachable only from inside `backend`, never
+    # from the host.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

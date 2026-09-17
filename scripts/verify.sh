@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 #
-# Local verification of the exam's submission checklist.
-#
-# Same assertions CI makes, runnable before pushing. Every check maps to a line
-# in the spec's "Submission Checklist" or "Bonus Features"; the numbering below
-# follows the spec's own requirement numbers.
+# Local verification of the exam's submission checklist: the same assertions
+# CI makes, runnable before pushing. Section numbering follows the spec's own
+# requirement numbers.
 #
 # Usage:
 #   ./scripts/verify.sh            # everything, including the Docker build
@@ -34,9 +32,6 @@ head2() { printf '\n%s%s%s\n' "$D" "$1" "$N"; }
 # check <description> <command...> -- passes if the command exits 0
 check() { local desc="$1"; shift; if out=$("$@" 2>&1); then ok "$desc"; else bad "$desc" "${out##*$'\n'}"; fi; }
 
-# ---------------------------------------------------------------------------
-# 2. Containerization
-# ---------------------------------------------------------------------------
 head2 "2. Containerization (Docker)"
 
 [[ -f Dockerfile ]] && ok "Dockerfile present" || bad "Dockerfile present"
@@ -54,14 +49,10 @@ grep -qE '^\s*USER\s+(node|[0-9]+)' Dockerfile \
   && ok "Dockerfile declares a non-root USER" \
   || bad "Dockerfile declares a non-root USER" "no USER instruction found"
 
-# Bonus: multi-stage
 [[ $(grep -cE '^\s*FROM ' Dockerfile) -ge 2 ]] \
   && ok "Multi-stage build ($(grep -cE '^\s*FROM ' Dockerfile) stages)" \
   || bonus "Multi-stage build"
 
-# ---------------------------------------------------------------------------
-# 1 + 3. The app, its tests, and the image actually working
-# ---------------------------------------------------------------------------
 head2 "1/3. Application, tests, image"
 
 if command -v npm > /dev/null 2>&1; then
@@ -85,8 +76,8 @@ else
   if out=$(docker build -t "$IMAGE" . 2>&1); then
     ok "Docker image builds"
 
-    # Assert the running user, not the Dockerfile text: a later stage, an
-    # ENTRYPOINT or a base-image change can all make USER a lie.
+    # Read the running user rather than the Dockerfile text: a later stage,
+    # an ENTRYPOINT or a base-image change can all make USER a lie.
     uid=$(docker run --rm --entrypoint id "$IMAGE" -u 2>/dev/null)
     if [[ "$uid" == "0" ]]; then
       bad "Container runs as non-root" "running as uid 0"
@@ -96,8 +87,8 @@ else
       ok "Container runs as non-root (uid $uid, $(docker run --rm --entrypoint id "$IMAGE" -un))"
     fi
 
-    # "Builds" is not "works": --omit=dev can prune a runtime dependency and
-    # the build still exits 0. Start it and talk to it.
+    # A build exits 0 even when --omit=dev has pruned a runtime dependency,
+    # so start the container and talk to it.
     docker rm -f verify-smoke > /dev/null 2>&1
     if docker run -d --init --name verify-smoke -p 3100:3000 "$IMAGE" > /dev/null 2>&1; then
       body=""
@@ -121,9 +112,6 @@ else
   fi
 fi
 
-# ---------------------------------------------------------------------------
-# 3. CI workflow
-# ---------------------------------------------------------------------------
 head2 "3. Continuous Integration (GitHub Actions)"
 
 WF=.github/workflows/ci.yml
@@ -141,11 +129,10 @@ else
   grep -qE 'docker/build-push-action|docker build' "$WF" \
     && ok "Builds the Docker image" || bad "Builds the Docker image"
 
-  # actionlint parses the workflow properly -- the greps above would happily
-  # match a string inside a file YAML cannot even load.
-  # Pass the files explicitly: with no arguments actionlint looks for a git
-  # repository and errors out when the tree is not one (a downloaded zip, a
-  # copied directory), which would report as a workflow problem it is not.
+  # actionlint parses the workflow properly; the greps above would match a
+  # string inside a file YAML cannot even load. The files are passed
+  # explicitly because with no arguments actionlint requires a git repository
+  # and errors out on a plain directory, which reads as a workflow problem.
   if command -v actionlint > /dev/null 2>&1; then
     check "Workflow syntax (actionlint)" actionlint .github/workflows/ci.yml .github/workflows/codeql.yml
   elif command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1 && [[ $FAST -eq 0 ]]; then
@@ -157,9 +144,6 @@ else
   fi
 fi
 
-# ---------------------------------------------------------------------------
-# 4. Security scanning
-# ---------------------------------------------------------------------------
 head2 "4. Security scanning"
 
 SCANNERS=()
@@ -174,19 +158,16 @@ else
   bad "Security scanner integrated" "no scanner found in .github/workflows/"
 fi
 
-# The planted vulnerability must actually be detected. This is the inverted
-# gate: finding NOTHING is the failure, because it is indistinguishable from a
-# scanner that is broken or pointed at the wrong path.
+# Inverted gate: finding NOTHING is the failure, because it is
+# indistinguishable from a scanner that is broken or pointed at the wrong path.
 if [[ ! -d security-demo ]]; then
   bad "Deliberate vulnerability planted" "security-demo/ not found"
 else
   ok "Deliberate vulnerability planted (security-demo/)"
 
-  # Count the findings rather than reading the exit code. `npm audit` exits
-  # non-zero both when it finds vulnerabilities AND when it cannot run at all
-  # (ENOLOCK, network failure, bad cwd) -- so an exit-code test reports a
-  # crashed scanner as a successful detection. That is the exact failure this
-  # gate exists to catch, so it cannot be built on the same mistake.
+  # Count findings rather than read the exit code: `npm audit` exits non-zero
+  # both on a finding and on failing to run at all (ENOLOCK, network, bad cwd),
+  # so an exit-code test would report a crashed scanner as a detection.
   if command -v npm > /dev/null 2>&1; then
     audit_json=$(cd security-demo && npm audit --json 2>/dev/null)
     n=$(printf '%s' "$audit_json" | node -e '
@@ -204,15 +185,13 @@ else
     skip "npm audit flags the planted dependencies" "npm not installed"
   fi
 
-  # Same reasoning as above: count findings in the JSON report, because a
-  # Gitleaks that failed to start also exits non-zero.
+  # Counted from the JSON report for the same reason as above: a Gitleaks that
+  # failed to start also exits non-zero.
   #
-  # The report goes in the repo directory, which is already mounted: a second
-  # mount for a temp dir does not survive path translation on Windows/MSYS,
-  # and the scan then looks "broken" for reasons that have nothing to do with
-  # the scan. Pinned to the same version CI uses -- upstream tightened the
-  # `github-pat` rule after v8.21.2, and `:latest` finds one fewer credential
-  # in this fixture than the pipeline does.
+  # The report is written into the already-mounted repo directory; a second
+  # mount for a temp dir does not survive path translation on Windows/MSYS.
+  # Pinned to the version CI uses: upstream tightened the `github-pat` rule
+  # after v8.21.2, so `:latest` finds one fewer credential in this fixture.
   leaks_report=".verify-gitleaks.json"
   GITLEAKS_VERSION="v8.21.2"
   rm -f "$leaks_report"
@@ -249,9 +228,6 @@ else
     || bad "Fixture excluded from the image (.dockerignore)"
 fi
 
-# ---------------------------------------------------------------------------
-# 5. Documentation
-# ---------------------------------------------------------------------------
 head2 "5. Documentation (README.md)"
 
 if [[ ! -f README.md ]]; then
@@ -268,8 +244,7 @@ else
   has 'vulnerability demonstration\|planted' && ok "Vulnerability demonstration"         || bad "Vulnerability demonstration"
   has 'challenge'                           && ok "Challenges faced"                     || bad "Challenges faced"
 
-  # Every embedded image must exist, or the evidence renders as a broken icon
-  # on GitHub -- and a screenshot nobody can see proves nothing.
+  # A missing image renders as a broken icon on GitHub, which proves nothing.
   missing=""
   while read -r img; do
     [[ -z "$img" ]] && continue
@@ -283,9 +258,6 @@ else
   fi
 fi
 
-# ---------------------------------------------------------------------------
-# 6. Bonus features
-# ---------------------------------------------------------------------------
 head2 "6. Bonus features (optional)"
 
 if [[ -f docker-compose.yml ]]; then
@@ -317,7 +289,6 @@ else
   skip "Branch protection active on main" "gh not installed or not authenticated"
 fi
 
-# ---------------------------------------------------------------------------
 head2 "Summary"
 printf '  %s%d passed%s · %s%d failed%s · %d skipped · %d bonus missing\n\n' \
   "$G" "$PASS" "$N" "$R" "$FAIL" "$N" "$SKIP" "$BONUS_MISSING"

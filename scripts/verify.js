@@ -2,11 +2,10 @@
 //
 // Cross-platform launcher for scripts/verify.sh.
 //
-// On Windows, `bash` on PATH is usually WSL's stub (C:\Windows\System32\bash.exe).
-// With no distro installed it fails with:
-//   WSL (Relay) ERROR: CreateProcessCommon: execvpe(/bin/bash) failed
-// which has nothing to do with the script. Git for Windows ships a real bash,
-// so find that one instead of trusting PATH order.
+// On Windows the `bash` first on PATH is usually WSL's stub, which fails with
+// "CreateProcessCommon: execvpe(/bin/bash) failed" when no distro is
+// installed. Git for Windows ships a real bash, so locate that one rather
+// than trusting PATH order.
 
 const { spawnSync, execFileSync } = require('node:child_process');
 const { existsSync } = require('node:fs');
