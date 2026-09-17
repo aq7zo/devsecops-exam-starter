@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "jest",
+    "validate": "bash scripts/validate.sh",
     "test:ci": "jest --ci --coverage",
     "docker:build": "docker build -t macky-merch-api:local .",
     "docker:run": "docker run --rm --init -p 3000:3000 macky-merch-api:local"
