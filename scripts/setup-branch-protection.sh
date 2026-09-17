@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 #
-# Bonus: branch protection -- block merging a PR whose CI is red.
+# Branch protection: block merging a PR whose CI is red.
 #
-# Branch protection is repository *state*, not repository *code*, so it cannot
-# live in a committed file the way the pipeline does. Configuring it by hand
-# through the GitHub UI leaves no record of what was configured or why. This
-# script is that record: run it once, and the settings are reproducible and
-# reviewable in git like everything else.
+# Protection is repository state rather than code, so it cannot live in a
+# committed file the way the pipeline does. This script is the record of what
+# was configured and why, reviewable in git like everything else.
 #
 # Requires the GitHub CLI, authenticated with admin rights on the repo:
 #   gh auth login
@@ -20,11 +18,9 @@ set -euo pipefail
 REPO="${1:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 BRANCH="${2:-main}"
 
-# The single required check. `ci-passed` is an aggregate job that depends on
-# every other job in ci.yml, so protecting this one name transitively requires
-# all of them. Listing jobs individually here would mean that renaming a job,
-# or adding a new one, silently drops it from the gate -- the classic way a
-# protected branch quietly stops protecting anything.
+# `ci-passed` aggregates every other job in ci.yml, so requiring this one name
+# transitively requires all of them. Listing jobs individually would drop a job
+# from the gate every time one is renamed or added.
 REQUIRED_CHECK="CI passed"
 
 echo "Protecting ${BRANCH} on ${REPO}..."

@@ -4,7 +4,6 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Health Check Endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'OK', message: 'Macky Merch API is running smoothly.' });
 });

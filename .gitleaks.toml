@@ -1,7 +1,5 @@
-# Gitleaks config for the PRODUCTION secret scan.
-#
-# Extends the upstream default ruleset (~170 provider rules) rather than
-# redefining rules, so new upstream detections arrive for free.
+# Extends the upstream default ruleset rather than redefining rules, so new
+# upstream detections arrive for free.
 title = "Macky Merch API - production secret scan"
 
 [extend]

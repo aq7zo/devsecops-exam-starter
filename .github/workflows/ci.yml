@@ -1,6 +1,5 @@
 name: CI
 
-# Required trigger set from the spec: every push and every PR targeting main.
 on:
   push:
     branches: [main]
@@ -8,14 +7,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Least privilege by default. Jobs that need more (SARIF upload) opt in
-# individually, so a compromised action in any other job cannot write to the
-# repository.
+# Least privilege by default; jobs needing more (SARIF upload) opt in
+# individually, so a compromised action elsewhere cannot write to the repo.
 permissions:
   contents: read
 
-# A force-push mid-run should cancel the stale run, not race it. Never cancel
-# in-progress runs on main -- those are the ones whose results get recorded.
+# Cancel superseded PR runs, but never a run on main -- those results are the
+# recorded ones.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -23,20 +21,14 @@ concurrency:
 env:
   IMAGE_NAME: macky-merch-api
   TRIVY_SEVERITY: HIGH,CRITICAL
-  # Trivy runs from its official published image rather than the marketplace
-  # action. That action downloads and installs the Trivy binary from GitHub
-  # Releases on every run, which is an extra moving part between us and the
-  # scan -- and it is the part that failed. Pulling a pinned container is the
-  # same approach already used for Gitleaks below: one fewer thing to break,
-  # and the exact scanner version is reproducible.
+  # Pinned image rather than the marketplace action, which re-downloads the
+  # Trivy binary from GitHub Releases on every run. Same approach as Gitleaks
+  # below: fewer moving parts, and a reproducible scanner version.
   TRIVY_IMAGE: aquasec/trivy:0.65.0
 
 jobs:
-  # =========================================================================
-  # 1. TEST -- spec steps 1-4: checkout, set up Node, install, test.
-  # Matrix over current and next LTS: catches a runtime-specific break before
-  # it reaches the image, which is pinned to 22.
-  # =========================================================================
+  # Matrix over current and next LTS catches a runtime-specific break before it
+  # reaches the image, which is pinned to 22.
   test:
     name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
@@ -52,12 +44,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: npm          # restores ~/.npm keyed on package-lock.json
+          cache: npm          # keyed on package-lock.json
 
-      # `npm ci` over `npm install`: installs exactly the locked tree and fails
-      # loudly if package.json and package-lock.json disagree. `npm install`
-      # would quietly rewrite the lockfile in CI, so the tree that was tested
-      # would not be the tree that was reviewed.
+      # `npm ci` fails loudly when package.json and the lockfile disagree;
+      # `npm install` would rewrite the lockfile, so the tree under test would
+      # not be the tree that was reviewed.
       - name: Install dependencies
         run: npm ci
 
@@ -72,16 +63,14 @@ jobs:
           path: coverage/
           retention-days: 7
 
-  # =========================================================================
-  # 2. DEPENDENCY SCAN -- Trivy + npm audit against the real dependency tree.
-  # Blocking. security-demo/ is skipped here; it has its own job below.
-  # =========================================================================
+  # Blocking scan of the real dependency tree. security-demo/ is skipped here;
+  # it has its own job below.
   dependency-scan:
     name: Dependency scan (Trivy + npm audit)
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write   # needed only to publish SARIF
+      security-events: write   # publishing SARIF only
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -95,24 +84,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # npm's own advisory database. Gate at `high`: moderate findings are
-      # reported for visibility but do not block, so the pipeline does not
-      # train people to ignore it.
+      # Gated at `high`: moderate findings are reported but do not block, so
+      # the pipeline does not train people to ignore a red gate.
       - name: npm audit (report, all severities)
         run: npm audit || true
 
       - name: npm audit (gate, high+)
         run: npm audit --audit-level=high
 
-      # Trivy reads package-lock.json directly and uses a different advisory
-      # source than npm, so the two overlap rather than duplicate.
+      # Different advisory source than npm audit, so the two overlap rather
+      # than duplicate.
       - name: Trivy filesystem scan (blocking)
         run: |
           docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" fs             --scanners vuln,secret             --severity "$TRIVY_SEVERITY"             --ignore-unfixed             --skip-dirs security-demo             --exit-code 1             --format table             .
 
-      # misconfig is reported here but not gated: its policy set changes
-      # between Trivy releases, and a gate whose ruleset moves underneath you
-      # becomes a flaky blocker on unrelated PRs.
+      # misconfig is reported but not gated: its policy set changes between
+      # Trivy releases, which would make this a flaky blocker on unrelated PRs.
       - name: Trivy filesystem scan (SARIF for code scanning)
         if: always()
         run: |
@@ -125,11 +112,8 @@ jobs:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
 
-  # =========================================================================
-  # 3. SECRET SCAN -- Gitleaks over the FULL history, not just the diff.
-  # A secret deleted in a later commit is still a leaked secret; scanning only
-  # the working tree would miss it entirely.
-  # =========================================================================
+  # Scans the full history, not just the working tree: a secret deleted in a
+  # later commit is still leaked.
   secret-scan:
     name: Secret scan (Gitleaks)
     runs-on: ubuntu-latest
@@ -137,11 +121,10 @@ jobs:
       - name: Check out full history
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # 0 = every commit; default shallow clone is 1
+          fetch-depth: 0    # every commit; the default clone is shallow
 
-      # Run the upstream image directly rather than the marketplace action:
-      # that action requires a GITLEAKS_LICENSE for organisation accounts, and
-      # pinning the image tag keeps the ruleset reproducible.
+      # The marketplace action requires a GITLEAKS_LICENSE for organisation
+      # accounts; a pinned image also keeps the ruleset reproducible.
       - name: Gitleaks (working tree + history)
         run: |
           docker run --rm -v "$PWD:/repo" \
@@ -153,10 +136,7 @@ jobs:
               --verbose \
               --exit-code 1
 
-  # =========================================================================
-  # 4. DOCKERFILE LINT -- catches insecure or wasteful instructions before a
-  # build is attempted. Cheap, so it gates the build job.
-  # =========================================================================
+  # Cheap enough to gate the build job on.
   lint-dockerfile:
     name: Lint Dockerfile (Hadolint)
     runs-on: ubuntu-latest
@@ -168,11 +148,6 @@ jobs:
           dockerfile: Dockerfile
           failure-threshold: warning
 
-  # =========================================================================
-  # 5. BUILD + SMOKE TEST + IMAGE SCAN -- spec step 5, plus proof the image
-  # actually serves traffic and has no known HIGH/CRITICAL CVEs.
-  # "It built" is not the same as "it works".
-  # =========================================================================
   build:
     name: Build image, smoke test, scan
     runs-on: ubuntu-latest
@@ -187,9 +162,8 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build the `test` stage first: it runs the suite inside the image, so a
-      # test that passes on the runner but fails in the container is caught
-      # here rather than in production.
+      # Runs the suite inside the image, catching a test that passes on the
+      # runner but fails in the container.
       - name: Build test stage (runs the suite inside the image)
         uses: docker/build-push-action@v6
         with:
@@ -205,13 +179,13 @@ jobs:
           context: .
           target: runtime
           push: false
-          load: true          # load into the local daemon so we can run it
+          load: true          # into the local daemon, so the image can be run
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Guards the non-root requirement mechanically. A future edit that drops
-      # `USER node` fails CI instead of silently shipping a root container.
+      # A later edit that drops `USER node` fails CI instead of silently
+      # shipping a root container.
       - name: Assert the container does not run as root
         run: |
           USER_ID=$(docker run --rm --entrypoint id "${IMAGE_NAME}:${GITHUB_SHA}" -u)
@@ -229,8 +203,8 @@ jobs:
           docker run -d --init --name smoke -p 3000:3000 \
             "${IMAGE_NAME}:${GITHUB_SHA}"
 
-          # Poll instead of `sleep N`: fast when the app is ready, and it
-          # reports the actual failure instead of a fixed-delay guess.
+          # Polling rather than a fixed sleep: reports the actual failure
+          # instead of guessing a startup time.
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:3000/health > /tmp/health.json; then
               echo "Healthy after ${i}s:"
@@ -257,14 +231,9 @@ jobs:
         if: always()
         run: docker rm -f smoke || true
 
-      # Scans the assembled image: OS packages from the Alpine base *and* the
-      # bundled node_modules. The filesystem scan above cannot see base image
-      # layers, so this is a genuinely different attack surface.
-      #
-      # The image is exported to a tar and scanned with --input rather than
-      # handing Trivy the Docker socket. Mounting the socket into a container
-      # grants it full control of the daemon, which is a lot of authority for
-      # something whose only job is to read a filesystem.
+      # Covers the base image layers, which the filesystem scan above cannot
+      # see. Exported to a tar and scanned with --input rather than mounting
+      # the Docker socket, which would grant the scanner control of the daemon.
       - name: Export image for scanning
         run: docker save "${IMAGE_NAME}:${GITHUB_SHA}" -o image.tar
 
@@ -284,7 +253,6 @@ jobs:
           sarif_file: trivy-image.sarif
           category: trivy-image
 
-      # Supply-chain provenance: what is actually inside the artefact we ship.
       - name: Generate SBOM (CycloneDX)
         run: |
           docker run --rm -v "$PWD:/work" -w /work "$TRIVY_IMAGE" image             --input image.tar             --format cyclonedx             --output sbom.cdx.json
@@ -302,12 +270,9 @@ jobs:
           docker images "${IMAGE_NAME}:${GITHUB_SHA}" \
             --format '- `{{.Repository}}:{{.Tag}}` — **{{.Size}}**' >> "$GITHUB_STEP_SUMMARY"
 
-  # =========================================================================
-  # 6. VULNERABILITY DEMO -- the spec's "prove your scanner catches it" step,
-  # implemented as an INVERTED gate: this job fails when the scanners come
-  # back CLEAN. A scanner that is broken, misconfigured or silently disabled
-  # therefore breaks the build -- something a normal green check never reveals.
-  # =========================================================================
+  # Inverted gate: this job fails when the scanners come back CLEAN, so a
+  # scanner that is broken, misconfigured or silently disabled breaks the build
+  # instead of reporting green.
   vulnerability-demo:
     name: Prove the scanners catch the planted vuln
     runs-on: ubuntu-latest
@@ -380,14 +345,10 @@ jobs:
             jq -r '.[] | "| \(.RuleID) | \(.File) | \(.StartLine) |"' security-demo/leaks.json
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # =========================================================================
-  # 7. AGGREGATE GATE -- one stable check name for branch protection.
-  # Protecting each job individually means every matrix change or renamed job
-  # silently drops a required check. This job depends on all of them, so the
-  # rule is configured once and keeps working.
-  # `if: always()` is essential: without it a skipped dependency would leave
-  # this job skipped, which branch protection reads as "not failing".
-  # =========================================================================
+  # One stable check name for branch protection to require; protecting each job
+  # individually would silently drop a check on every rename or matrix change.
+  # `if: always()` is load-bearing: a skipped dependency would otherwise skip
+  # this job, which branch protection reads as "not failing".
   ci-passed:
     name: CI passed
     runs-on: ubuntu-latest

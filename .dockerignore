@@ -1,24 +1,23 @@
-# Rebuilt inside the image by `npm ci`. Copying a host-built tree in would also
-# import whatever platform-specific native binaries the host compiled.
+# Rebuilt by `npm ci` inside the image; copying the host tree in would import
+# native binaries built for the wrong platform.
 node_modules/
 
-# History and CI config are not runtime inputs. .git in particular can carry
-# credentials in its config/logs and would land in an image layer forever.
+# Not runtime inputs. .git can carry credentials in its config and logs, and
+# would land in an image layer permanently.
 .git/
 .github/
 .gitignore
 .gitleaks.toml
 
-# Secrets: never bake these into a layer -- inject at run time.
+# Injected at run time; baking them into a layer is permanent.
 .env
 .env.*
 !.env.example
 
-# Deliberately vulnerable fixtures for the scanner demo. These exist to be
-# caught by CI, not to be shipped.
+# Deliberately vulnerable scanner fixtures -- meant to be caught by CI, not
+# shipped.
 security-demo/
 
-# Build/test artefacts and local noise.
 coverage/
 npm-debug.log*
 *.log
