@@ -9,3 +9,4 @@ section. Worth capturing:
 - A pull request with the `CI passed` check red and the merge button blocked
   (proof the branch-protection bonus is actually enforcing)
 - The Security tab showing SARIF findings from Trivy and CodeQL
+- A full `npm run verify` run with every check passing

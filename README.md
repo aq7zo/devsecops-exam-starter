@@ -49,7 +49,8 @@ npm test
 
 ## Verify everything at once
 
-`scripts/verify.sh` runs every item on the exam's submission checklist locally —
+`scripts/verify.sh` (launched via `scripts/verify.js`, so it works on Windows too)
+runs every item on the exam's submission checklist locally —
 the same assertions CI makes, before you push:
 
 ```bash
@@ -57,17 +58,10 @@ npm run verify          # everything, including the image build and smoke test
 npm run verify:fast     # static checks only, no Docker (~5s)
 ```
 
-```
-4. Security scanning
-  PASS  Security scanner integrated: Trivy secret scanner CodeQL npm audit
-  PASS  Deliberate vulnerability planted (security-demo/)
-  PASS  npm audit flags the planted dependencies (5 high/critical advisories)
-  PASS  Gitleaks flags the planted credentials
-  PASS  Fixture excluded from the image (.dockerignore)
+![npm run verify: 40 checks passing across all six checklist sections](docs/screenshots/verify-js.png)
 
-Summary
-  33 passed · 0 failed · 6 skipped · 0 bonus missing
-```
+*A full `npm run verify` on this branch — every checklist section green,
+40 passed · 0 failed · 0 skipped.*
 
 It exits non-zero if any **required** check fails; bonus items report as `MISS`
 without failing the run, and anything needing a missing tool reports `SKIP`
