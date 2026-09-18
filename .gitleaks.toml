@@ -14,6 +14,4 @@ with the default ruleset and fails if those fakes are NOT detected.
 """
 paths = [
   '''^security-demo/''',
-  '''^docs/''',
-  '''\.md$''',
 ]
