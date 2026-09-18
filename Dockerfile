@@ -2,21 +2,21 @@
 
 # `npm ci` rather than `npm install`: installs the locked tree exactly, so a
 # transitive dependency cannot drift into the image after a scan passed.
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # Nothing below depends on this stage; CI targets it explicitly so a red test
 # cannot produce a publishable image.
-FROM node:22-alpine AS test
+FROM node:24-alpine AS test
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm test
 
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
 
 ENV NODE_ENV=production \
     PORT=3000 \

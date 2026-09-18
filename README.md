@@ -9,7 +9,7 @@ traffic, and blocks the merge when a security scanner finds something.
 - [Setup](#setup)
 - [Verify everything at once](#verify-everything-at-once)
 - [Pipeline](#pipeline)
-- [Why `node:22-alpine`](#why-node22-alpine)
+- [Why `node:24-alpine`](#why-node24-alpine)
 - [Why these scanners](#why-these-scanners)
 - [Vulnerability demonstration](#vulnerability-demonstration)
 - [Challenge faced](#challenge-faced)
@@ -18,8 +18,7 @@ traffic, and blocks the merge when a security scanner finds something.
 ## Setup
 
 ```bash
-docker build -t macky-merch-api:local .
-docker run --rm --init -p 3000:3000 macky-merch-api:local
+make run        # builds the image, then serves on :3000
 
 curl http://localhost:3000/health
 # {"status":"OK","message":"Macky Merch API is running smoothly."}
@@ -28,19 +27,38 @@ curl http://localhost:3000/health
 Confirm it is **not** running as root:
 
 ```bash
-docker run --rm --entrypoint id macky-merch-api:local -un
+make whoami
 # node
 ```
 
 Full stack (API + Redis on a private network), and without Docker:
 
 ```bash
-docker compose up --build
-docker compose down -v
+make up                 # docker compose up --build
+make down               # docker compose down -v
 
 npm ci && npm start     # npm ci, not npm install — see Challenge
-npm test
+make test
 ```
+
+### Make commands
+
+| Command | Runs | What it does |
+|---|---|---|
+| `make build` | `docker build -t $(IMAGE) .` | Builds the image (default tag `macky-merch-api:local`; override with `make build IMAGE=…`) |
+| `make run` | `docker run --rm --init -p 3000:3000 $(IMAGE)` | Builds, then serves the API on `:3000`. `--init` makes `Ctrl-C` stop it instantly |
+| `make whoami` | `docker run --rm --entrypoint id $(IMAGE) -un` | Builds, then prints the container's user. Must print `node`, never `root` |
+| `make up` | `docker compose up --build` | Starts the full stack: API + Redis on a private network |
+| `make down` | `docker compose down -v` | Stops the stack and deletes its volumes |
+| `make test` | `npm ci` then `npm test` | Installs the locked dependency tree and runs the Jest suite on the host |
+| `make verify` | `npm run verify` | Runs every submission-checklist check, including the image build and smoke test |
+| `make verify-fast` | `npm run verify:fast` | Static checks only, no Docker (~5s) |
+| `make demo` | the three `demo-*` targets below | Runs every scanner against the planted fixture in `security-demo/` |
+| `make demo-audit` | `cd security-demo && npm audit --audit-level=high` | `npm audit` on the planted packages. Expect 6 high/critical advisories |
+| `make demo-trivy` | `docker run … aquasec/trivy:0.65.0 fs … security-demo` | Trivy on the planted packages. Expect 10 HIGH/CRITICAL findings |
+| `make demo-gitleaks` | `docker run … zricethezav/gitleaks:v8.21.2 detect …` | Gitleaks on the planted credentials. Expect 2 leaks |
+
+No `make` (e.g. stock Windows)? Run the command in the **Runs** column directly.
 
 > [!NOTE]
 > `--init` gives the container a real PID 1, so `Ctrl-C` and `docker stop`
@@ -54,8 +72,8 @@ runs every item on the exam's submission checklist locally —
 the same assertions CI makes, before you push:
 
 ```bash
-npm run verify          # everything, including the image build and smoke test
-npm run verify:fast     # static checks only, no Docker (~5s)
+make verify             # everything, including the image build and smoke test
+make verify-fast        # static checks only, no Docker (~5s)
 ```
 
 ![npm run verify: 40 checks passing across all six checklist sections](docs/screenshots/verify-js.png)
@@ -74,7 +92,7 @@ that result is indistinguishable from a broken one.
 `.github/workflows/ci.yml`, on every push and pull request to `main`:
 
 ```
-├── test              Node 20 · 22 · 24  →  npm ci  →  npm test
+├── test              Node 24  →  npm ci  →  npm test
 ├── dependency-scan   npm audit (gate: high+)  +  Trivy fs
 ├── secret-scan       Gitleaks over the FULL git history
 ├── lint-dockerfile   Hadolint
@@ -93,7 +111,7 @@ cleanly and still produce an image that exits on startup — wrong `CMD`, a prod
 dependency pruned by `--omit=dev`, a file the `node` user cannot read. So "the
 image builds" and "the image works" are checked separately.
 
-## Why `node:22-alpine`
+## Why `node:24-alpine`
 
 **Not `node:latest`** — it is not a version, it is a moving target. The image
 CI builds today and the one a reviewer builds next month can be different Node
@@ -101,19 +119,22 @@ majors, which defeats the point of a lockfile: reproducible dependencies on an
 irreproducible runtime. It is also the largest variant, shipping a full Debian
 userland this app never uses.
 
-**Not `node:22` (Debian)** — ~1.1 GB uncompressed versus ~150 MB for Alpine.
+**Not `node:24` (Debian)** — ~1.1 GB uncompressed versus ~150 MB for Alpine.
 Size here is attack surface: every OS package is one Trivy can find a CVE in
 and one you then have to triage, and `curl`, `git`, `perl` and a compiler in a
 production image are tools an attacker inherits for free after an RCE.
 
-**Why 22** — Active LTS. `package.json` declares `"engines": { "node": ">=20" }`
-and CI tests 20, 22 and 24, so the pin is tested rather than assumed.
+**Why 24** — Active LTS, supported until April 2028. 22 is already in
+maintenance (security fixes only). CI runs the tests on Node 24 and
+`package.json` declares `"engines": { "node": ">=24" }`, so the version the
+image ships is the only version the project claims to support, and the one
+that is tested.
 
 > [!IMPORTANT]
 > The trade-off: Alpine uses musl libc, not glibc, so packages with prebuilt
 > native bindings may fall back to compiling from source or misbehave subtly.
 > This app is pure JavaScript, so the trade is free — on a project with native
-> modules, `node:22-slim` (~200 MB) is the better answer.
+> modules, `node:24-slim` (~200 MB) is the better answer.
 
 **Non-root** is enforced, not just written down. `USER node` uses the uid 1000
 account the official image already provides, and CI fails the build if
@@ -183,7 +204,8 @@ Planted in [`security-demo/`](./security-demo/):
 CI confirms **10 HIGH/CRITICAL dependency findings and 2 detected
 credentials** — headline `minimist@1.2.0`, **CVE-2021-44906 (CRITICAL,
 prototype pollution)**, alongside HIGH advisories in `lodash`,
-`path-to-regexp`, `qs` and `body-parser`. Reproduce locally:
+`path-to-regexp`, `qs` and `body-parser`. Reproduce locally with `make demo`,
+which runs these three commands:
 
 ```bash
 cd security-demo && npm audit --audit-level=high
@@ -279,7 +301,7 @@ is the actual reason to define a network instead of using the default bridge.
 `depends_on.condition: service_healthy` waits for Redis to answer `PING`, not
 merely for the container to exist.
 
-**Multi-stage build** — three stages, [described above](#why-node22-alpine).
+**Multi-stage build** — three stages, [described above](#why-node24-alpine).
 
 **Branch protection** — applied via
 [`scripts/setup-branch-protection.sh`](./scripts/setup-branch-protection.sh),

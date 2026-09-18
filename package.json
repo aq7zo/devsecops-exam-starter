@@ -6,11 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "jest",
-    "test:ci": "jest --ci --coverage",
     "verify": "node scripts/verify.js",
-    "verify:fast": "node scripts/verify.js --fast",
-    "docker:build": "docker build -t macky-merch-api:local .",
-    "docker:run": "docker run --rm --init -p 3000:3000 macky-merch-api:local"
+    "verify:fast": "node scripts/verify.js --fast"
   },
   "author": "La Salle Computer Society",
   "license": "ISC",
@@ -22,6 +19,6 @@
     "supertest": "^7.2.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   }
 }
