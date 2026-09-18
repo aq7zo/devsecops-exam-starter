@@ -22,6 +22,7 @@ coverage/
 npm-debug.log*
 *.log
 Dockerfile
+Makefile
 .dockerignore
 docker-compose*.yml
 docs/
