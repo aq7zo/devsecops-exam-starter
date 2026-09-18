@@ -1,4 +1,4 @@
-# Macky Merch API — Secure Delivery Pipeline
+# Macky Merch API: Secure Delivery Pipeline
 
 > LSCS DevSecOps Engineering Take-Home Exam · 41st LSCS · Term 1
 
@@ -31,13 +31,13 @@ make whoami
 # node
 ```
 
-Full stack (API + Redis on a private network), and without Docker:
+To run the full stack (API + Redis on a private network), or to run without Docker:
 
 ```bash
 make up                 # docker compose up --build
 make down               # docker compose down -v
 
-npm ci && npm start     # npm ci, not npm install — see Challenge
+npm ci && npm start     # npm ci, not npm install (see Challenge faced)
 make test
 ```
 
@@ -68,8 +68,8 @@ No `make` (e.g. stock Windows)? Run the command in the **Runs** column directly.
 ## Verify everything at once
 
 `scripts/verify.sh` (launched via `scripts/verify.js`, so it works on Windows too)
-runs every item on the exam's submission checklist locally —
-the same assertions CI makes, before you push:
+runs every item on the exam's submission checklist locally, making the same
+assertions CI makes before you push:
 
 ```bash
 make verify             # everything, including the image build and smoke test
@@ -78,14 +78,15 @@ make verify-fast        # static checks only, no Docker (~5s)
 
 ![npm run verify: 40 checks passing across all six checklist sections](docs/screenshots/verify-js.png)
 
-*A full `npm run verify` on this branch — every checklist section green,
+*A full `npm run verify` on this branch: every checklist section green,
 40 passed · 0 failed · 0 skipped.*
 
-It exits non-zero if any **required** check fails; bonus items report as `MISS`
-without failing the run, and anything needing a missing tool reports `SKIP`
-rather than passing silently. The scanner checks are inverted the same way CI's
-are — a scanner that finds *nothing* in `security-demo/` is a **FAIL**, because
-that result is indistinguishable from a broken one.
+Any **required** check failing makes it exit non-zero. Bonus items just show
+up as `MISS` without failing the run, and if a tool a check needs is missing,
+that check reports `SKIP` instead of quietly passing, which would be worse
+than not checking at all. The scanner checks got the same inverted logic as
+CI: a scanner that finds *nothing* in `security-demo/` counts as a **FAIL**,
+because that result looks exactly like a broken scanner.
 
 ## Pipeline
 
@@ -95,8 +96,8 @@ that result is indistinguishable from a broken one.
 ├── test              Node 24  →  npm ci  →  npm test
 ├── dependency-scan   npm audit (gate: high+)  +  Trivy fs
 ├── secret-scan       Gitleaks over the FULL git history
-├── lint-dockerfile   Hadolint
-├── vulnerability-demo  INVERTED gate — fails if the scanners find nothing
+├── lint-dockerfile   Hadolint (Dockerfile best-practices linter)
+├── vulnerability-demo  INVERTED gate: fails if the scanners find nothing
 │
 └── build   (needs: test, lint-dockerfile)
       ├── build image (test stage runs the suite inside the container)
@@ -106,58 +107,49 @@ that result is indistinguishable from a broken one.
 
 ![CI run with every job green](docs/screenshots/ci-run-overview.png)
 
-**`build` runs the container, not just `docker build`.** A Dockerfile can build
-cleanly and still produce an image that exits on startup — wrong `CMD`, a prod
-dependency pruned by `--omit=dev`, a file the `node` user cannot read. So "the
-image builds" and "the image works" are checked separately.
+**Why `build` actually runs the container instead of stopping at `docker build`.**
+A Dockerfile can build clean and still ship an image that dies on startup,
+maybe the `CMD` is wrong, or `--omit=dev` pruned something the app needed at
+runtime, or there's a file the `node` user can't read. So "the image builds"
+and "the image works" get checked as two separate things, because they're not
+the same claim.
 
 ## Why `node:24-alpine`
 
-**Not `node:latest`** — it is not a version, it is a moving target. The image
-CI builds today and the one a reviewer builds next month can be different Node
-majors, which defeats the point of a lockfile: reproducible dependencies on an
-irreproducible runtime. It is also the largest variant, shipping a full Debian
-userland this app never uses.
+**Why not `node:latest`?** "latest" isn't a fixed version; it will always point to whatever the newest Node release is. So if I built the image today and someone else builds it next month, they could end up with a completely different version of Node. That undermines the existence of the lockfile, which exists to make sure everyone gets the exact same dependencies. On top of that, latest is the biggest image, and it would overkill to be bundling a full Debian operating system full of tools the app will never ever even use.
 
-**Not `node:24` (Debian)** — ~1.1 GB uncompressed versus ~150 MB for Alpine.
-Size here is attack surface: every OS package is one Trivy can find a CVE in
-and one you then have to triage, and `curl`, `git`, `perl` and a compiler in a
-production image are tools an attacker inherits for free after an RCE.
-
-**Why 24** — Active LTS, supported until April 2028. 22 is already in
-maintenance (security fixes only). CI runs the tests on Node 24 and
-`package.json` declares `"engines": { "node": ">=24" }`, so the version the
-image ships is the only version the project claims to support, and the one
-that is tested.
+**Why Not `node:24` (the standard Debian version).** it pins the version, which fixes the first problem, but it's still huge, about 1.1 GB compared to only roughly ~150 MB for Alpine. The actual concern here isn't disk space, it's how many packages come with the version. Every extra package is something a security scanner, such as Trivy, might flag with a CVE, meaning more alerts to investigate. In short, I chose to keep the image minimal so there's a narrower attack surface for a
+potential threat actor and consequently lesser dependencies to patch.
 
 > [!IMPORTANT]
 > The trade-off: Alpine uses musl libc, not glibc, so packages with prebuilt
 > native bindings may fall back to compiling from source or misbehave subtly.
-> This app is pure JavaScript, so the trade is free — on a project with native
+> This app is pure JavaScript, so the trade is free. On a project with native
 > modules, `node:24-slim` (~200 MB) is the better answer.
 
 **Non-root** is enforced, not just written down. `USER node` uses the uid 1000
 account the official image already provides, and CI fails the build if
-`docker run --entrypoint id` returns `0` — so an edit that drops that line
+`docker run --entrypoint id` returns `0`, so an edit that drops that line
 breaks CI instead of quietly shipping a root container.
 
 ![Build job asserting the container runs as node, uid 1000](docs/screenshots/build-nonroot-and-size.png)
 
 *The assertion reads the running container (`Container runs as node (uid 1000)`),
-not the Dockerfile — appending `USER root` further down would pass a text check
+not the Dockerfile. Appending `USER root` further down would pass a text check
 and fail this one.*
 
 The build is **multi-stage**: `deps` (`npm ci --omit=dev`), `test` (full tree,
-suite runs during the image build), `runtime` (app + production modules only).
-The final image carries no `jest`, no npm cache — and no package manager at
-all, since the container runs `node server.js` and installs nothing at run
-time. That deletion alone removed 11 of the image scan's 13 findings.
+runs the suite; CI builds it explicitly, while a plain `docker build` skips it
+because `runtime` does not depend on it), `runtime` (app + production modules only).
+The final image carries no `jest`, no npm cache and, since the container runs
+`node server.js` and installs nothing at run time, no npm, npx, corepack or yarn.
+Only Alpine's `apk` remains. Deleting the Node package managers alone removed 11 of the image scan's 13 findings.
 
 **`.dockerignore`** keeps `node_modules` (a host-built tree carries the wrong
 platform's native binaries), the `security-demo/` fixture, and `.git` out of
 the build context. `.git` is the security-relevant one: its config and logs
 routinely contain credentials, and anything copied into a layer stays there
-forever — deleting it in a later `RUN` hides it from `ls`, nothing more.
+forever; deleting it in a later `RUN` hides it from `ls`, nothing more.
 
 ## Why these scanners
 
@@ -168,29 +160,32 @@ three classes, because they cannot substitute for each other.
 |---|---|---|---|
 | **Trivy** | SCA + image | Known CVEs in npm packages *and* Alpine base-image packages | Bugs with no published advisory |
 | **Gitleaks** | Secret detection | Credentials in the working tree **and in git history** | Anything that is not a credential |
-| **CodeQL** | SAST | Flaws in code we wrote — injection sinks, unsafe flows | Vulnerable third-party dependencies |
+| **CodeQL** | SAST | Flaws in code we wrote, such as injection sinks and unsafe flows | Vulnerable third-party dependencies |
 
-**Trivy over `npm audit` alone.** `npm audit` is in the pipeline too, as a
-second opinion from a different advisory source, but it only ever sees
-`package-lock.json`. Trivy scans the **built image**, where the Alpine packages
-live, and emits SARIF that lands in the GitHub Security tab instead of
-scrolling past in a log. `--ignore-unfixed` on the blocking scans is
-deliberate: blocking a merge on a CVE with no available patch leaves the
-developer no action except disabling the gate, which is how security checks die.
+**Why Trivy and not just `npm audit`?** `npm audit` is still in the pipeline,
+it's a second opinion from a different advisory source, but it only ever
+looks at `package-lock.json`. Trivy also scans the **built image**, which is
+where the Alpine OS packages actually live, and it writes its results as
+SARIF (a standard JSON format for scanner findings) straight into the GitHub
+Security tab instead of a log nobody scrolls back through. The blocking scans
+also run with `--ignore-unfixed` on purpose: blocking a merge over a CVE that
+has no patch yet leaves the developer nothing to do but disable the gate, and
+a gate that gets disabled once tends to stay disabled.
 
-**Gitleaks over TruffleHog.** TruffleHog's default mode reports only *verified*
-secrets — it calls the provider to check the credential is live. Exactly wrong
-here: the planted credentials are fake and would never verify, so the demo
-would report clean. Gitleaks flags anything shaped like a credential, which is
-also what you want in a pre-merge gate, where the point is catching a key
-*before* it goes live. It runs with `fetch-depth: 0`, since the default shallow
-clone would pass a secret that was committed Monday and deleted Tuesday.
+**Why Gitleaks over TruffleHog?** TruffleHog's default mode only reports
+*verified* secrets, it actually calls the provider to check the credential is
+live. That's the wrong call here: the planted credentials are fake and would
+never verify, so the demo would come back clean. Gitleaks flags anything
+shaped like a credential instead, which is exactly what a pre-merge gate
+wants, since the whole point is catching a key *before* it ever goes live. It
+also runs with `fetch-depth: 0`, because the default shallow clone would
+happily let through a secret that got committed Monday and deleted Tuesday.
 
 ![GitHub Security tab listing CodeQL and Trivy as configured tools](docs/screenshots/security-tab-sarif.png)
 
 *Both SARIF-emitting scanners register as tools in the Security tab, so findings
-get history and per-PR annotations instead of scrolling past in a log — 0 open
-alerts on `main`, 39 resolved.*
+get history and per-PR annotations instead of scrolling past in a log. There are 0
+open alerts on `main` and 39 resolved.*
 
 ## Vulnerability demonstration
 
@@ -202,34 +197,23 @@ Planted in [`security-demo/`](./security-demo/):
 | `leaked-credentials.js` | Fake GitHub PAT and RSA private key | Gitleaks |
 
 CI confirms **10 HIGH/CRITICAL dependency findings and 2 detected
-credentials** — headline `minimist@1.2.0`, **CVE-2021-44906 (CRITICAL,
-prototype pollution)**, alongside HIGH advisories in `lodash`,
-`path-to-regexp`, `qs` and `body-parser`. Reproduce locally with `make demo`,
-which runs these three commands:
-
-```bash
-cd security-demo && npm audit --audit-level=high
-
-docker run --rm -v "$PWD:/work" -w /work aquasec/trivy:0.65.0 \
-  fs --scanners vuln --severity HIGH,CRITICAL security-demo
-
-docker run --rm -v "$PWD/security-demo:/scan" zricethezav/gitleaks:v8.21.2 \
-  detect --source /scan --no-git --redact --verbose
-```
+credentials**. The headline finding is **CVE-2021-44906 (CRITICAL, prototype
+pollution)** in `minimist@1.2.0`, alongside HIGH advisories in `lodash`,
+`path-to-regexp`, `qs` and `body-parser`.
 
 ![Trivy reporting 10 HIGH/CRITICAL findings in the fixture](docs/screenshots/local-trivy-fixture.png)
 
-*Trivy: `Total: 10 (HIGH: 9, CRITICAL: 1)` — `minimist` CVE-2021-44906 is the
+*Trivy: `Total: 10 (HIGH: 9, CRITICAL: 1)`. The `minimist` CVE-2021-44906 is the
 critical one, and every row carries a fixed version, so none are suppressed by
 `--ignore-unfixed`.*
 
 ![Gitleaks reporting 2 redacted findings](docs/screenshots/local-gitleaks.png)
 
-*Gitleaks: `leaks found: 2` — `private-key` at line 25 and `github-pat` at line
-22, printed with `--redact`.*
+*Gitleaks: `leaks found: 2`, namely `github-pat` at line 12 and `private-key` at
+line 15, printed with `--redact`.*
 
 > [!NOTE]
-> Both commands pin the scanner version the pipeline uses. Upstream tightened
+> The `make demo-*` targets pin the scanner versions the pipeline uses. Upstream tightened
 > the `github-pat` rule after v8.21.2, so `gitleaks:latest` finds one fewer
 > credential in this fixture than CI does.
 
@@ -242,12 +226,9 @@ so the proof is on the run page rather than buried in step logs:
 `npm audit` report, `Trivy detected 10 HIGH/CRITICAL issue(s) in security-demo/`,
 and `Gitleaks detected 2 planted credential(s)` with rule, file and line.*
 
-Capture steps for these screenshots:
-[`docs/screenshots/README.md`](./docs/screenshots/README.md).
-
-The fixture is deliberately **outside** the app's dependency graph and outside
-the image, and the `vulnerability-demo` job treats it as an *inverted gate* —
-it fails if the scanners come back clean:
+The fixture sits deliberately **outside** the app's dependency graph and
+outside the built image, and the `vulnerability-demo` job treats it as an
+*inverted gate*: it fails if the scanners come back clean.
 
 ```yaml
 - name: npm audit MUST flag the planted dependencies
@@ -269,58 +250,46 @@ that skip this directory, so a real leak can never hide behind a planted one.
 
 ## Challenge faced
 
-The spec asks for two things that pull in opposite directions. Requirement 4
-wants a deliberate vulnerability the pipeline *catches* — a failing check. The
-branch-protection bonus wants a required check that *passes* on good code. Do
-the obvious thing for both and `main` is permanently red, so branch protection
-has to be bypassed on every merge.
+The initial challenge was that I wasn't deeply familiar with configuring Docker, so I taught myself using Claude and Google. Along the way, I came across an interpretation of Docker that makes it analogous to Object-Oriented Programming (OOP) concepts: a Dockerfile is like the source code, an image is like a class or blueprint, and a container is like the live, running instance.
 
-My first attempt was `continue-on-error: true` on the scanning job. It "worked"
-— vulnerability visible, pipeline green — but re-reading the job showed why it
-was wrong: `continue-on-error` makes the step green *whatever* it reports. A
-scanner finding ten CVEs and a scanner that crashed on startup produce an
-identical green tick. That is exactly the security theatre the exam is testing
-against.
+The main challenge, however, was that two of the spec requirements initially seemed contradictory: integrating an automated security check into my GitHub Actions workflow conflicted with the requirement to deliberately add a vulnerable package to my repository. Moreover, the bonus feature called for a branch protection rule in my repository settings that prevents pull requests from being merged if the GitHub Actions pipeline fails. If I had simply planted the intentionally vulnerable dependency in the app's actual package.json while an automated security check was running, the check would have been permanently red. Branch protection would then have blocked every PR I opened, so I initially thought I would have to deliberately disable or bypass the very protection checks and guidelines the specs asked me to demonstrate.
 
-The fix was inverting the assertion: not "run the scanner and tolerate
-failure", but "run the scanner and **fail if it reports nothing**". Same green
-pipeline, opposite guarantee — if a scanner breaks, the build breaks. Isolating
-the fixture in `security-demo/` is what makes that possible without shipping a
-vulnerable app.
+The fix was to keep the planted vulnerability out of the app's dependency graph entirely by isolating it in a separate directory, `security-demo/`. Additionally, the demonstration job was configured with an inverted assertion: it exits with code 1 if the scanner reports zero findings. This makes sense for a security demonstration with deliberately planted vulnerabilities. A green check means the scanners are correctly wired to detect this class of vulnerability, while a red check means something is broken (the scanner is misconfigured, the fixture was patched away, or the tool crashed).
 
-The lesson: *a check that cannot fail is not a check.* Before trusting any
-gate, ask what it does when the tool underneath it is broken, not just when the
-code is bad.
+Overall, this project taught me that security requirements and delivery pipelines don't have to work against each other; with thoughtful design, a deliberately vulnerable decoy dependency can coexist with strict branch protection and still prove that the safeguards work. It also showed me how much I could learn in a short time by breaking unfamiliar concepts down into models I already understood previously. Given the opportunity, I'm eager to further deepen my understanding of containerization, continuous integration, and the tools behind them as I work toward becoming a stronger DevSecOps engineer.
 
 ## Bonus features
 
-**Docker Compose** — `docker-compose.yml` runs the API and Redis on a private
-user-defined `backend` network. Redis has **no `ports:` mapping**: reachable at
-`redis://cache:6379` from inside the network, unreachable from the host, which
-is the actual reason to define a network instead of using the default bridge.
-`depends_on.condition: service_healthy` waits for Redis to answer `PING`, not
-merely for the container to exist.
+**Docker Compose.** `docker-compose.yml` runs the API and Redis on their own
+user-defined `backend` network. Redis gets **no `ports:` mapping**, so it's
+reachable at `redis://cache:6379` from inside the network but not from the
+host at all, which is really the whole reason to bother with a custom network
+instead of the default bridge. `depends_on.condition: service_healthy` also
+waits for Redis to actually answer `PING`, not just for the container to
+exist.
 
-**Multi-stage build** — three stages, [described above](#why-node24-alpine).
+**Multi-stage build.** The three stages are [described above](#why-node24-alpine).
 
-**Branch protection** — applied via
-[`scripts/setup-branch-protection.sh`](./scripts/setup-branch-protection.sh),
-a script rather than a click-path because branch protection is repository
-*state*, not code, and configuring it by hand leaves no record of what was set
-or why. It requires the `ci-passed` check plus `strict: true` (a PR must be
-current with `main`, which is what stops two individually-green PRs merging
-into a broken main), `enforce_admins`, linear history and no force-pushes —
-the last of which also stops someone erasing a committed secret from history
-instead of rotating it.
+**Branch protection.** Set up through
+[`scripts/setup-branch-protection.sh`](./scripts/setup-branch-protection.sh)
+instead of clicking through GitHub's UI, because branch protection is
+repository *state*, not code, and doing it by hand leaves no record of what
+got set or why. It requires the `ci-passed` check plus `strict: true` (a PR
+has to be current with `main`, otherwise two individually green PRs could
+still merge into a broken `main`), `enforce_admins`, and no force-pushes or
+branch deletion. No approving review is required: on a single-maintainer repo
+that rule, with `enforce_admins` on, would block every PR. Blocking
+force-pushes also stops someone from erasing a committed
+secret out of history instead of just rotating it.
 
 ![Pull request with merging blocked by failing required checks](docs/screenshots/branch-protection-blocked.png)
 
 *Proven rather than asserted: PR #2 deliberately breaks a test, the required
 `CI / CI passed` check goes red, and the merge button is disabled with
-"Merging is blocked due to failing merge requirements". Note `Build image, smoke
-test, scan` is **skipped** — it needs `test`, and a skipped job is why the gate
-is the single `ci-passed` job rather than each job individually.*
+"Merging is blocked due to failing merge requirements". Note that `Build image,
+smoke test, scan` is **skipped**: it needs `test`, and skipped jobs are why the
+gate is the single `ci-passed` job rather than each job individually.*
 
-Also present, beyond the spec: a CycloneDX SBOM per build, SARIF upload to the
-Security tab, Hadolint gating the Dockerfile, Dependabot for npm / base image /
-Actions, and least-privilege workflow `permissions:`.
+Beyond what the spec asked for: a CycloneDX SBOM on every build, SARIF upload
+to the Security tab, Hadolint gating the Dockerfile, Dependabot watching npm,
+the base image and Actions, and least-privilege workflow `permissions:`.

@@ -36,16 +36,12 @@ gh api -X PUT "repos/${REPO}/branches/${BRANCH}/protection" \
     ]
   },
   "enforce_admins": true,
-  "required_pull_request_reviews": {
-    "required_approving_review_count": 1,
-    "dismiss_stale_reviews": true,
-    "require_last_push_approval": true
-  },
+  "required_pull_request_reviews": null,
   "restrictions": null,
-  "required_linear_history": true,
+  "required_linear_history": false,
   "allow_force_pushes": false,
   "allow_deletions": false,
-  "required_conversation_resolution": true,
+  "required_conversation_resolution": false,
   "block_creations": false,
   "lock_branch": false,
   "allow_fork_syncing": false
@@ -65,18 +61,17 @@ Applied:
   enforce_admins                    The rule applies to admins too. A rule the
                                     author can bypass is a convention, not a
                                     control.
-  dismiss_stale_reviews             New commits invalidate prior approvals, so
-                                    an approval always refers to the code that
-                                    actually merges.
-  require_last_push_approval        The person who pushed last cannot be the
-                                    only approver.
-  required_linear_history           Squash/rebase only. Keeps `main` bisectable.
   allow_force_pushes: false         History on main cannot be rewritten --
                                     which is also what stops someone quietly
                                     erasing a committed secret from the log
                                     instead of rotating it.
-  required_conversation_resolution  Review threads must be resolved, not just
-                                    outvoted by an approval.
+  allow_deletions: false            main cannot be deleted.
+
+Not applied:
+  required_pull_request_reviews     With enforce_admins on, a required approval
+                                    blocks every PR on a single-maintainer
+                                    repo. Add it once there is a second
+                                    reviewer.
 
 Verify:
   gh api repos/OWNER/REPO/branches/main/protection | jq '.required_status_checks'

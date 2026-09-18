@@ -32,6 +32,17 @@ head2() { printf '\n%s%s%s\n' "$D" "$1" "$N"; }
 # check <description> <command...> -- passes if the command exits 0
 check() { local desc="$1"; shift; if out=$("$@" 2>&1); then ok "$desc"; else bad "$desc" "${out##*$'\n'}"; fi; }
 
+head2 "1. Application"
+
+if command -v npm > /dev/null 2>&1; then
+  [[ -d node_modules ]] || { printf '       %sinstalling dependencies...%s\n' "$D" "$N"; npm ci > /dev/null 2>&1; }
+  check "npm test passes" npm test --silent
+  check "npm audit is clean with no critical or high vulnerabilities." npm audit --audit-level=high
+else
+  skip "npm test passes" "npm not installed"
+  skip "npm audit is clean with no critical or high vulnerabilities." "npm not installed"
+fi
+
 head2 "2. Containerization (Docker)"
 
 [[ -f Dockerfile ]] && ok "Dockerfile present" || bad "Dockerfile present"
@@ -48,21 +59,6 @@ grep -qE '^\s*\.git/?\s*$' .dockerignore \
 grep -qE '^\s*USER\s+(node|[0-9]+)' Dockerfile \
   && ok "Dockerfile declares a non-root USER" \
   || bad "Dockerfile declares a non-root USER" "no USER instruction found"
-
-[[ $(grep -cE '^\s*FROM ' Dockerfile) -ge 2 ]] \
-  && ok "Multi-stage build ($(grep -cE '^\s*FROM ' Dockerfile) stages)" \
-  || bonus "Multi-stage build"
-
-head2 "1/3. Application, tests, image"
-
-if command -v npm > /dev/null 2>&1; then
-  [[ -d node_modules ]] || { printf '       %sinstalling dependencies...%s\n' "$D" "$N"; npm ci > /dev/null 2>&1; }
-  check "npm test passes" npm test --silent
-  check "npm audit clean on the app itself (high+)" npm audit --audit-level=high
-else
-  skip "npm test passes" "npm not installed"
-  skip "npm audit clean on the app itself (high+)" "npm not installed"
-fi
 
 if [[ $FAST -eq 1 ]]; then
   skip "Docker image builds" "--fast"
@@ -275,6 +271,10 @@ if [[ -f docker-compose.yml ]]; then
 else
   bonus "Docker Compose"
 fi
+
+[[ $(grep -cE '^\s*FROM ' Dockerfile) -ge 2 ]] \
+  && ok "Multi-stage build ($(grep -cE '^\s*FROM ' Dockerfile) stages)" \
+  || bonus "Multi-stage build"
 
 [[ -f scripts/setup-branch-protection.sh ]] \
   && ok "Branch protection is codified" || bonus "Branch protection"
